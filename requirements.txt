@@ -1,0 +1,13 @@
+discord.py
+typing
+typing_extensions
+numpy
+python-dotenv
+beautifulsoup4
+pandas
+requests
+pip
+motor
+aiofiles
+lxml
+psutil
