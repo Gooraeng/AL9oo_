@@ -3,7 +3,7 @@ from discord import app_commands, Embed, Interaction
 from utils.embed_color import failed
 
 
-async def permissioncheck(interaction : Interaction, error : app_commands.BotMissingPermissions):
+def permissioncheck(interaction : Interaction, error : app_commands.BotMissingPermissions):
     missing_list = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_permissions]
     missing = "\n* ".join(s for s in missing_list)
 

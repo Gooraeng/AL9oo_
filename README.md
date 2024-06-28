@@ -9,6 +9,7 @@
 - Toy project
 - Initial Development : 23.9.14(Thu) ~ 23.9.21(Thu)
 - Currently on Service (23.10.05 ~ )
+- Official Launch as AL9oo Feb 29th, 2024.
 
 
 
