@@ -1,15 +1,22 @@
 from __future__ import annotations
 from aiohttp import ClientSession
+from collections import defaultdict
 from datetime import datetime, timedelta
 from discord import (
+    app_commands,
     CustomActivity, 
     Embed, 
+    File,
     Interaction, 
+    Message,
     Status, 
     ui
 )
 from discord.ext import commands, tasks
 from discord.utils import format_dt, utcnow
+from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Any, Optional, Union
+from typing_extensions import LiteralString
 from utils.configenv import (
     carhunt_db,
     clash_db,
@@ -17,12 +24,8 @@ from utils.configenv import (
     refer_db,
     weekly_db
 )
-from utils.embed_color import failed
-from collections import defaultdict
-from motor.motor_asyncio import AsyncIOMotorClient
+from utils.embed_color import al9oo_point, failed
 from utils.patchnote_manager import patchnotemanager
-from typing import Any, Union
-from typing_extensions import LiteralString
 
 import asyncio
 import csv
@@ -59,10 +62,13 @@ initial_extensions = (
 
 
 class GuildJoinView(ui.View):
-    def __init__(self, guild_id : int = None):
-        super().__init__(timeout= None)
+    def __init__(self, guild_id : int = None, delete_after : Optional[bool] = None, timeout : Optional[float] = None):
+        super().__init__(timeout=timeout)
         self.guild_id = guild_id
         self.add_item(ui.Button(label= "Go to Your server!", url= f"https://discord.com/channels/{guild_id}", row= 0))
+        self.message : Optional[Message] = None
+        self.delete_after = delete_after
+        self.timeout = timeout
 
 
     @ui.button(label= "Delete", style= discord.ButtonStyle.danger, custom_id= "deleteall")
@@ -77,17 +83,34 @@ class GuildJoinView(ui.View):
 
 
     async def on_timeout(self, interaction : Interaction) -> None:
-        await interaction.response.send_message(embed= Embed(
-            title = "Too Late!",
-            description= "You had about 15 minutes to delete this.\
-                \nBut, it seems you are already interested in me!",
-            color= failed
-        ))
+        try:
+            if self.message and self.delete_after:
+                self.message.delete()
+            else:
+                if self.timeout is None:
+                    timeout = '15'
+                else:
+                    timeout = (self.timeout) // 60
+
+                await interaction.response.send_message(embed= Embed(
+                    title = "Too Late!",
+                    description= f"You had about {timeout} minutes to delete this.\
+                        \nBut, it seems you are already interested in me!",
+                    color= failed
+                ))
+        except:
+            ...
         
     
     async def on_error(self, interaction: Interaction, error: Exception, item: ui.Item[Any]) -> None:
         return await interaction.response.send_message("There's something error", ephemeral= True)   
         
+
+
+def check_data_folder() -> None:
+        if not os.path.exists('data'):
+            os.mkdir('data')
+
 
 
 class Al9oo(commands.Bot):
@@ -117,13 +140,8 @@ class Al9oo(commands.Bot):
         # self._feedback_log_channel = self.get_channel(int(self._feedback_log_channel_id))
 
 
-    def check_data_folder(self) -> None:
-        if not os.path.exists('data'):
-            os.mkdir('data')
-
-
     async def setup_hook(self) -> None:
-        self.check_data_folder()
+        check_data_folder()
         
         log.warning("아9 패치노트 로딩")
         patchnotemanager.process.start()
@@ -134,8 +152,8 @@ class Al9oo(commands.Bot):
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
-            except Exception:
-                log.exception('%s 로딩 실패', extension)
+            except Exception as e:
+                log.exception('%s 로딩 실패', extension, exc_info=e)
         log.info("명령어 로딩 완료")
         
         self.bot_app_info = await self.application_info()
@@ -169,8 +187,8 @@ class Al9oo(commands.Bot):
             if self.is_ready():
                 if not hasattr(self, 'uptime'):
                     self.uptime = utcnow()
-                activity = CustomActivity(name= f'{len(self.guilds)} Server(s) | /help')
-                await self.change_presence(activity= activity, status= Status.online)
+                # activity = CustomActivity(name= f'{len(self.guilds)} Server(s) | /help')
+                # await self.change_presence(activity= activity, status= Status.online)
                 log.info("[Ready] Tag :  %s // (ID : %s)", self.user, self.user.id)
         
         except Exception as e:
@@ -189,15 +207,15 @@ class Al9oo(commands.Bot):
             await self.change_presence(status= discord.Status.online, activity= current_status)
             
             # Welcome Message - Could be added in future
-            # embed_join = Embed(
-            #     title= "Advanced Discord Bot that provides various Reference Runs!",
-            #     description= f"I am happy to join **[ {guild.name} ]** server!", color= al9oo_point
-            # )
-            # embed_join.set_thumbnail(url= self.user.avatar.url)
-            # embed_join.add_field(name= "* Let's taste `/help` first to close to me!", value= "", inline= False)
+            embed_join = Embed(
+                title= "Advanced Discord Bot that provides various Reference Runs!",
+                description= f"I am happy to join **[ {guild.name} ]** server!", color= al9oo_point
+            )
+            embed_join.set_thumbnail(url= self.user.avatar.url)
+            embed_join.add_field(name= "* Let's taste `/help` first to close to me!", value= "", inline= False)
 
-            # view = GuildJoinView(guild_id= guild.id)
-            # await guild.owner.send(content= "", embed= embed_join, view= view, file= File("images/WELCOME.png"))
+            view = GuildJoinView(guild_id= guild.id, delete_after=True)
+            view.message = await guild.owner.send(content= "", embed= embed_join, view= view, file= File("images/WELCOME.png"))
         
         except Exception as e:
             log.error(e)

@@ -142,7 +142,8 @@ class DeletePatchNoteView(ui.View):
         super().__init__(timeout= None)
         self.title = title
         self.pnlog = pnlog
-        
+
+
     @ui.button(label= "Yes", style= ButtonStyle.gray, custom_id= "delete-patchnote")
     async def yes(self, interaction : Interaction, button : Button):
         try:

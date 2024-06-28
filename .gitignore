@@ -21,3 +21,4 @@ temp_cog/
 icons/
 
 .env
+test.py
