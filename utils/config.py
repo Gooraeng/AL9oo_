@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+
 import os, sys
 
 
@@ -14,3 +15,10 @@ clash_db = os.getenv('clash_db')
 elite_db = os.getenv('elite_db')
 weekly_db = os.getenv('weekly_db')
 db_webhook = os.getenv('db_webhook')
+
+vaild_formats = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp"
+]

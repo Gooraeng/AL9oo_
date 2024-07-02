@@ -15,10 +15,11 @@ SECURITY.md
 
 
 __pycache__/
-Cogs/__pycache__/
 temp_cog/
 *.py[cod]
 icons/
 
 .env
 test.py
+temp.py
+data/

@@ -78,19 +78,35 @@
 
 
 ## Utils
-#### 1. /help
-- Provides all commands informations.
-
-#### 2. /redeem
-- Provides redeem link.
-
-#### 3. /a9-releasenote
+#### 1. /pn alu
 - Server-Only command.
-- Provides Asphalt 9 Release note Discord server invite link. Such as Season Update, Special Event, etc.
+- Provides Asphalt Legends Unite Release note list.
 
-#### 4. /patchnote
+#### 2. /pn algoo
 - Server-Only command.
 - parameters
   * selective : `search`
 - Select to Watch AL9oo's patch note.
   * If you don't set `search`, You can watch latest patch note.
+
+#### 3. /help
+- Provides all commands informations.
+
+#### 4. /redeem
+- Provides redeem link.
+
+#### 5. /support
+- Provides AL9oo Support discord server.
+
+
+## Follow AL9oo Alerts
+- These commands are visible for Administrator.
+- AL9oo must have "Manage Webhooks" for these features.
+- Server-Only commands.
+#### 1. /follow start
+- Start follow AL9oo Server Alerts.
+- You can choose between "Main Announcement" and "Urgent Alert" or both of them.
+  * Main Announcement : Receive Update for it.
+  * Urgent Alert : Receive Maintenance or something urgent issues related to it.
+
+#### 2. /follow stop 
