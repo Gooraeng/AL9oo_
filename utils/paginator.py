@@ -29,7 +29,7 @@ class T_Pagination(ui.View):
         *,
         _author : Union[Member, User] = None
     ):
-        super().__init__(timeout=None)
+        super().__init__(timeout=120)
         self._author = _author
         self._embeds = embeds
         self._current_page = 1
@@ -138,12 +138,12 @@ class FeedbackPagination(ui.View):
         wh : Optional[Webhook] = None,
     ):
         super().__init__(timeout=None)
-        self._set_max_pages(embeds)
         self.wh = wh
         self.current_page : int = 0
         self.message : Optional[WebhookMessage] = None
         
         if embeds:
+            self._set_max_pages(embeds)
             self.fill_items()
             self._initial = embeds[0]
     
@@ -225,7 +225,6 @@ class FeedbackPagination(ui.View):
     async def last_page(self, interaction : Interaction, _):
         await self.show_page(interaction, self._len - 1)
 
-    
     @ui.button(label="Skip to page..", style=ButtonStyle.gray, custom_id="num_page_button")
     async def go_to_numbered_page(self, interaction : Interaction, _):
         if self.message is None:

@@ -82,6 +82,11 @@ class NotFilledRequiredField(AlgooError):
         super().__init__(msg)
 
 
+class NotFoundReleaseNote(Exception):
+    def __init__(self, msg) -> None:
+        super().__init__(f'Can not find that you searched\n{msg}')
+
+
 class ButtonOnCooldown(discord.ext.commands.CommandError):
     def __init__(self, retry_after : float) -> None:
         self.retry_after = retry_after

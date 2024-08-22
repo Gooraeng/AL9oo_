@@ -19,6 +19,7 @@ from config import *
 from utils.embed_color import *
 from utils.models import ExecutableGuildChannel
 from utils.patchnote_manager import PatchNoteManager
+from utils.paginator import FeedbackPagination
 
 import aiofiles
 import asyncio
@@ -42,11 +43,13 @@ initial_extensions = (
 
 
 def check_data_folder():
+    """Create data folder when it doesn't exist."""
     if not os.path.exists('data'):
         os.mkdir('data')
 
 
 class GuildJoinView(ui.View):
+    """View Class for when AL9oo Joins Guilds."""
     def __init__(self, guild_id : int = None):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -60,6 +63,9 @@ class GuildJoinView(ui.View):
     @ui.button(label="Delete", style=discord.ButtonStyle.danger, custom_id="deleteall")
     async def delete_button(self, interaction : Interaction, button : discord.Button):
         await interaction.message.delete()
+    
+    # async def send(self, guild : discord.Guild):
+    #     await guild.owner.send()
 
     async def on_timeout(self, interaction : Interaction) -> None:
         await interaction.response.send_message(embed=Embed(
@@ -77,6 +83,7 @@ class Al9oo(commands.AutoShardedBot):
     pool : AsyncIOMotorClient
     
     def __init__(self):
+        check_data_folder()
         intents = discord.Intents.none()
         intents.guilds = True
         super().__init__(
@@ -89,7 +96,6 @@ class Al9oo(commands.AutoShardedBot):
             activity=CustomActivity(name='Listening /help'),
             status=Status.online
         )
-        
         self.resumes : defaultdict[int, list[datetime]] = defaultdict(list)
         self.identifies: defaultdict[int, list[datetime]] = defaultdict(list)
         self._auto_info : dict[str, Any] = {}
@@ -97,7 +103,8 @@ class Al9oo(commands.AutoShardedBot):
         self._feedback_channel : Optional[ExecutableGuildChannel] = None
         self._suggestion_channel : Optional[ForumChannel] = None
         self.client_id = int(client_id)
-
+        self.start_bg_task()
+        
     def load_mongo_drivers(self):
         self.pnote = self.pool["patchnote"]
         # AL9oo 패치노트 로그
@@ -110,38 +117,43 @@ class Al9oo(commands.AutoShardedBot):
         self._feedback_channel = self.get_channel(int(feedback_log_channel)) or await self.fetch_channel(int(feedback_log_channel))
         self._suggestion_channel = self.get_channel(int(suggestion_channel)) or await self.fetch_channel(int(suggestion_channel))
     
-    async def setup_hook(self) -> None:
-        self.session = ClientSession()
-        check_data_folder()
-        self.load_mongo_drivers()
-        await self.set_feedback_channel()
+    def add_views(self):
+        """Use for Views persistent."""
+        self.add_view(GuildJoinView())
+        self.add_view(FeedbackPagination(wh=self.fb_hook))
         
+    async def setup_hook(self) -> None:
+        self.load_mongo_drivers()
+        self.session = ClientSession()        
+        await self.set_feedback_channel()
         PatchNoteManager(self)
         Config(self)
+        
         # 최초 레퍼런스 세팅
         await self.renew_references()
         await self.initial()
         
-        log.warning("명령어 로딩 시작")
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
                 log.info('%s 로딩 완료', extension)
             except Exception as e:
                 log.error('%s 로딩 실패\n', extension, exc_info=e)
-        log.warning("명령어 로딩 완료")
-        
+                
+        self.add_views()
         self.bot_app_info = await self.application_info()
         self.owner_id = self.bot_app_info.owner.id
-        self.add_view(GuildJoinView())
-        
+    
+    def start_bg_task(self):
+        """이 클래스 내에서 백그라운드 작업을 시작한다."""
         log.warning("레퍼런스 자동 갱신 백그라운드 실행")
         self.auto_renew_references.start()
         log.warning("오래된 패치노트 정리 백그라운드 실행")
         self.delete_old_patchnote.start()
 
     @tasks.loop(hours=1)
-    async def delete_old_patchnote(self):        
+    async def delete_old_patchnote(self):   
+        """Try to delete AL9oo Patchnotes that is longer than 1 year."""     
         try:
             threshold_date = utcnow().replace(tzinfo=None) - timedelta(days=365)
             deleted = await self._pnlog.delete_many({"date" : {"$lt" : threshold_date}})
@@ -166,6 +178,7 @@ class Al9oo(commands.AutoShardedBot):
             await self.close()  
 
     async def renew_references(self):
+        """Renews References."""
         try:
             tasks = []
             urls = [
@@ -197,6 +210,7 @@ class Al9oo(commands.AutoShardedBot):
             log.error(f"Failed AUTOMATICALLY renew DBs due to '{e}'", exc_info=e)
     
     async def db_manage(self, url, *, file_name : Union[LiteralString, str]):
+        """Downloads csv files from AL9oo Public DB"""
         filename : str = file_name[:-7]
         headers = {'User-Agent': 'Mozilla/5.0'}
 
@@ -229,6 +243,7 @@ class Al9oo(commands.AutoShardedBot):
         await self.initial()
         
     async def initial(self):
+        """Gathers Reference parameters reset tasks"""
         files = [
             'carhunt',
             'clash',
@@ -239,6 +254,7 @@ class Al9oo(commands.AutoShardedBot):
         await asyncio.gather(*task)
     
     async def process_csv(self, file):
+        """Resets Reference parameters"""
         async with aiofiles.open(file=f'./data/{file}_db.csv', mode='r', encoding='utf-8', newline='') as f:
             reader = csv.reader(await f.readlines())
             headers = next(reader)

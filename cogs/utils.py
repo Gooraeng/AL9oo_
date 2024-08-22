@@ -228,6 +228,7 @@ class Utils(commands.Cog):
     @app_commands.command(description='Run this If you interested in me!')
     @app_commands.checks.dynamic_cooldown(check_interaction, key=lambda i : i.user.id)
     async def invite(self, interaction : Interaction):
+        await interaction.response.defer(thinking=True)
         perm = Permissions.none()
         perm.read_message_history = True
         perm.read_messages = True
@@ -237,7 +238,30 @@ class Utils(commands.Cog):
         perm.manage_webhooks = True
         perm.attach_files = True
         perm.embed_links = True
-        await interaction.response.send_message(f'<{oauth_url(self.app.client_id, permissions=perm)}>')
+        
+        reasons = {
+            "Message" : {
+                "Basically Lots of messages I sent are consist of Embeds!" : "Embed links",
+                "I can't just respond while being muted.." : "Send messages / Send messages in threads",
+                "To Manage my messages!" : "Manage messages / Read message history.",
+                "This might be better for flexibility." : "Read Messages",
+                "To send thumbnail of ALU patch notes" : "Attach Files"
+            },
+            "Follow" : {
+                "I brings Announcement messages via webhook from AL9oo Support Server. I handle webhooks only that I made!" : "Manage Webhooks"
+            }
+        }
+        view = InviteLinkView(label='Click Me!', url=oauth_url(self.app.client_id, permissions=perm))
+        embed = Embed(
+            title='Permission Usage',
+            description='',
+            colour=al9oo_point
+        )
+        for k, v in enumerate(reasons.items(), 1):
+            embed.description += f"### {k}. {v[0]}\n"
+            sub_value = [f"* ***{val}***\n * {idx}" for idx, val in v[1].items()]
+            embed.description += '\n'.join(s for s in sub_value) + '\n'
+        await interaction.followup.send(view=view, embed=embed)
         
     @app_commands.command(name='support', description='Get support server link!')
     @app_commands.checks.dynamic_cooldown(check_interaction, key=lambda i : i.user.id)

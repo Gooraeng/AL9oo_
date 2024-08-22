@@ -6,6 +6,7 @@ from lxml.etree import HTMLParser, parse
 from io import StringIO
 from json import dumps, loads
 from typing import Any, List, Optional
+from .exception import NotFoundReleaseNote
 
 import aiofiles
 import logging
@@ -56,11 +57,6 @@ def change_to_dt(string: str):
     other = "[%s] " %str(dt)[2:10]
     other = other.replace('-', '')
     return other, format_dt(dt, 'f')
-
-
-class NotFoundReleaseNote(Exception):
-    def __init__(self, msg) -> None:
-        super().__init__(f'Can not find that you searched\n{msg}')
 
 
 class PatchNoteManager:
