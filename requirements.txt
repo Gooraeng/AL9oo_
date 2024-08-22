@@ -1,0 +1,12 @@
+aiofiles
+aiohttp
+beautifulsoup4
+discord.py
+lxml
+motor
+numpy
+pandas
+psutil
+pydantic
+typing
+typing_extensions
