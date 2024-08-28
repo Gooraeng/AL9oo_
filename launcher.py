@@ -30,7 +30,7 @@ async def create_pool():
 async def main(is_dev : bool = False):
     log = logging.getLogger(__name__)
     try:
-        click.echo('')
+        log.info('Configuring MongoDB Driver')
         pool = await create_pool()
     except LoadingFailedMongoDrive:
         log.exception('Could not set up Mongo. Exiting.')
