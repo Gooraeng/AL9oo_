@@ -1,5 +1,6 @@
 from __future__ import annotations
 from aiohttp import ClientSession
+from cogs import error
 from collections import defaultdict
 from datetime import datetime, timedelta
 from discord import (
@@ -8,6 +9,7 @@ from discord import (
     ForumChannel,
     Interaction,
     Status, 
+    TextChannel,
     ui,
 )
 from discord.ext import commands, tasks
@@ -17,15 +19,14 @@ from typing import Any, Optional, Union
 from typing_extensions import LiteralString
 from config import *
 from utils.embed_color import *
-from utils.models import ExecutableGuildChannel
-from utils.patchnote_manager import PatchNoteManager
-from utils.paginator import FeedbackPagination
+from utils.models import CommandExecutableGuildChannel, WebhookMessagableChannel
 
 import aiofiles
 import asyncio
 import csv
 import discord
 import logging
+import pathlib
 
 
 __all__ = (
@@ -34,12 +35,14 @@ __all__ = (
 log = logging.getLogger(__name__)
 initial_extensions = (
     'cogs.admin',
+    'cogs.error',
     'cogs.feedback',
     'cogs.follow',
     'cogs.get_reference',
     'cogs.patchnote',
     'cogs.utils',
 )
+current_path = pathlib.Path(__file__).resolve()
 
 
 def check_data_folder():
@@ -77,13 +80,15 @@ class GuildJoinView(ui.View):
     async def on_error(self, interaction: Interaction, error: Exception, item: ui.Item[Any]) -> None:
         return await interaction.response.send_message("There's something error", ephemeral=True)   
 
-
+    
 class Al9oo(commands.AutoShardedBot):
     user : discord.ClientUser
     pool : AsyncIOMotorClient
     
-    def __init__(self):
+    def __init__(self, is_dev : bool = False, /):
         check_data_folder()
+        self.is_closing = False
+        
         intents = discord.Intents.none()
         intents.guilds = True
         super().__init__(
@@ -96,14 +101,16 @@ class Al9oo(commands.AutoShardedBot):
             activity=CustomActivity(name='Listening /help'),
             status=Status.online
         )
+        
         self.resumes : defaultdict[int, list[datetime]] = defaultdict(list)
         self.identifies: defaultdict[int, list[datetime]] = defaultdict(list)
         self._auto_info : dict[str, Any] = {}
         self._failed_auto_info : list[str] = []
-        self._feedback_channel : Optional[ExecutableGuildChannel] = None
+        self._feedback_channel : Optional[CommandExecutableGuildChannel] = None
         self._suggestion_channel : Optional[ForumChannel] = None
         self.client_id = int(client_id)
-        self.start_bg_task()
+        if not is_dev:
+            self.start_bg_task()
         
     def load_mongo_drivers(self):
         self.pnote = self.pool["patchnote"]
@@ -116,18 +123,22 @@ class Al9oo(commands.AutoShardedBot):
     async def set_feedback_channel(self):
         self._feedback_channel = self.get_channel(int(feedback_log_channel)) or await self.fetch_channel(int(feedback_log_channel))
         self._suggestion_channel = self.get_channel(int(suggestion_channel)) or await self.fetch_channel(int(suggestion_channel))
-    
+        self._al9oo_main_announcement = self.get_channel(al9oo_main_announcement) or await self.fetch_channel(al9oo_main_announcement)
+        self._al9oo_urgent_alert = self.get_channel(al9oo_urgent_alert) or await self.fetch_channel(al9oo_urgent_alert)
+        self._arn_channel = self.get_channel(arn_channel) or await self.fetch_channel(arn_channel)
+
     def add_views(self):
         """Use for Views persistent."""
         self.add_view(GuildJoinView())
-        self.add_view(FeedbackPagination(wh=self.fb_hook))
         
     async def setup_hook(self) -> None:
         self.load_mongo_drivers()
-        self.session = ClientSession()        
+        self.session = ClientSession()
+        self.bot_app_info = await self.application_info()     
+        self.owner_id = self.bot_app_info.owner.id
+        
         await self.set_feedback_channel()
-        PatchNoteManager(self)
-        Config(self)
+        self.config = Config(self)
         
         # 최초 레퍼런스 세팅
         await self.renew_references()
@@ -138,14 +149,11 @@ class Al9oo(commands.AutoShardedBot):
                 await self.load_extension(extension)
                 log.info('%s 로딩 완료', extension)
             except Exception as e:
-                log.error('%s 로딩 실패\n', extension, exc_info=e)
-                
+                log.error('%s 로딩 실패\n', extension, exc_info=e)   
         self.add_views()
-        self.bot_app_info = await self.application_info()
-        self.owner_id = self.bot_app_info.owner.id
     
     def start_bg_task(self):
-        """이 클래스 내에서 백그라운드 작업을 시작한다."""
+        """Initiate BG Task in this class."""
         log.warning("레퍼런스 자동 갱신 백그라운드 실행")
         self.auto_renew_references.start()
         log.warning("오래된 패치노트 정리 백그라운드 실행")
@@ -154,15 +162,13 @@ class Al9oo(commands.AutoShardedBot):
     @tasks.loop(hours=1)
     async def delete_old_patchnote(self):   
         """Try to delete AL9oo Patchnotes that is longer than 1 year."""     
+        threshold_date = utcnow().replace(tzinfo=None) - timedelta(days=365)
         try:
-            threshold_date = utcnow().replace(tzinfo=None) - timedelta(days=365)
             deleted = await self._pnlog.delete_many({"date" : {"$lt" : threshold_date}})
-            if deleted.deleted_count != 0:
+            if deleted.deleted_count > 0:
                 log.warning(f"{deleted.deleted_count}개의 오래된 패치노트 삭제 완료")
-            return
-
         except Exception:
-            return
+            pass
 
     # Bot events
     async def on_ready(self):
@@ -182,10 +188,10 @@ class Al9oo(commands.AutoShardedBot):
         try:
             tasks = []
             urls = [
-                [carhunt_db, "carhunt_db.csv"], 
-                [clash_db, "clash_db.csv"], 
-                [elite_db, "elite_db.csv"], 
-                [weekly_db, "weekly_db.csv"]
+                (carhunt_db, "carhunt_db.csv"), 
+                (clash_db, "clash_db.csv"), 
+                (elite_db, "elite_db.csv"), 
+                (weekly_db, "weekly_db.csv")
             ]
 
             for url, file_name in urls:
@@ -208,31 +214,37 @@ class Al9oo(commands.AutoShardedBot):
 
         except Exception as e:
             log.error(f"Failed AUTOMATICALLY renew DBs due to '{e}'", exc_info=e)
-    
+        
+        finally:
+            self._auto_info.clear()
+            self._failed_auto_info.clear()
+
     async def db_manage(self, url, *, file_name : Union[LiteralString, str]):
         """Downloads csv files from AL9oo Public DB"""
         filename : str = file_name[:-7]
-        headers = {'User-Agent': 'Mozilla/5.0'}
 
         try:
-            async with ClientSession(headers=headers) as session:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        raise Exception('Download failed.')
-                    
-                    file_path = os.path.join('data', file_name)
-                    with open(file_path, 'w+', encoding='utf-8', newline='') as f:
-                        f.write(await resp.text())
-                        f.seek(0)
-                        reader = csv.reader(f)
-                        count = sum(1 for row in reader) - 1
+            async with self.session.get(url) as resp:
+                if resp.status != 200:
+                    raise Exception
+                
+                file_path = current_path.parent / f'data/{file_name}'
+                async with aiofiles.open(file_path, 'w+', encoding='utf-8', newline='') as f:
+                    while True:
+                        chunk = await resp.content.read(8192)
+                        if not chunk:
+                            break
+                        await f.write(chunk.decode(errors='ignore'))
+                    # 1행으로 돌아가 자료 수 세기
+                    await f.seek(0)
+                    count = len([a async for a in f]) - 1
 
-                    _time = format_dt(datetime.now(), style="R")
-                    self._auto_info[f"{filename}.count"] = count
-                    self._auto_info[f"{filename}.applied"] = _time
+            self._auto_info[f"{filename}.count"] = count
+            self._auto_info[f"{filename}.applied"] = format_dt(utcnow(), style="R")
 
-        except Exception:
+        except Exception as e:
             self._failed_auto_info.append(filename)
+            log.error(filename, exc_info=e)
 
     @tasks.loop(minutes=1)
     async def auto_renew_references(self) -> None:
@@ -255,7 +267,8 @@ class Al9oo(commands.AutoShardedBot):
     
     async def process_csv(self, file):
         """Resets Reference parameters"""
-        async with aiofiles.open(file=f'./data/{file}_db.csv', mode='r', encoding='utf-8', newline='') as f:
+        path = current_path.parent / f'data/{file}_db.csv'
+        async with aiofiles.open(file=path, mode='r', encoding='utf-8', newline='') as f:
             reader = csv.reader(await f.readlines())
             headers = next(reader)
             data = list(reader)
@@ -273,8 +286,32 @@ class Al9oo(commands.AutoShardedBot):
         await super().start(discord_api_token)
     
     async def close(self):
+        if self.is_closing:
+            log.info("Shutting down alreay in progress. Exiting.")
+            return
+        
+        self.is_closing = True
+        log.info("Shutting down...")
+        
         await super().close()
-        await self.session.close()
+        
+        if bot_tasks := [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]:
+            log.debug(f'Canceling {len(bot_tasks)} outstanding tasks.')
+            
+            for task in bot_tasks:
+                task.cancel()
+            
+            await asyncio.gather(*bot_tasks, return_exceptions=True)
+            log.debug('All tasks cancelled.')
+        
+        try:
+            log.info("Closing MongoDB connection")
+            self.pool.close()
+            await self.session.close()
+        except Exception as e:
+            log.critical(f"Error during database disconnection: {e}")
+        
+        log.info('Shutdown Complete.')
     
     @auto_renew_references.before_loop
     @delete_old_patchnote.before_loop
@@ -283,18 +320,38 @@ class Al9oo(commands.AutoShardedBot):
     
     @discord.utils.cached_property
     def fb_hook(self):
-        target = fwh
-        hook = discord.Webhook.from_url(target, client=self)
+        hook = discord.Webhook.from_url(fwh, session=self.session)
         return hook
-
+    
+    @discord.utils.cached_property
+    def el_hook(self):
+        hook = discord.Webhook.from_url(elwh, client=self)
+        return hook
+    
     @property
     def owner(self) -> discord.User:
         return self.bot_app_info.owner
     
     @property
-    def feedback_channel(self) -> Optional[ExecutableGuildChannel]:
+    def feedback_channel(self) -> WebhookMessagableChannel:
         return self._feedback_channel
     
     @property
-    def suggestion_channel(self) -> Optional[ForumChannel]:
+    def suggestion_channel(self) -> ForumChannel:
         return self._suggestion_channel
+    
+    @property
+    def arn_channel(self) -> TextChannel:
+        return self._arn_channel
+    
+    @property
+    def al9oo_urgent_alert(self) -> TextChannel:
+        return self._al9oo_urgent_alert
+    
+    @property
+    def al9oo_main_announcement(self) -> TextChannel:
+        return self._al9oo_main_announcement
+    
+    @property
+    def err_handler(self) -> Optional[error.AppCommandErrorHandler]:
+        return self.get_cog('AppCommandErrorHandler')
