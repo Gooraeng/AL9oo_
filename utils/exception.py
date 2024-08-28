@@ -87,9 +87,14 @@ class NotFoundReleaseNote(Exception):
         super().__init__(f'Can not find that you searched\n{msg}')
 
 
-class ButtonOnCooldown(discord.ext.commands.CommandError):
+class ButtonOnCooldown(discord.app_commands.AppCommandError):
     def __init__(self, retry_after : float) -> None:
         self.retry_after = retry_after
+
+
+class FeedbackButtonOnCooldown(ButtonOnCooldown):
+    def __init__(self, retry_after : float) -> None:
+        super().__init__(retry_after)
 
 
 class InvaildFileFormat(TypeError):
@@ -97,3 +102,10 @@ class InvaildFileFormat(TypeError):
         vaild_formats_str = _human_join(vaild_formats, final='and')
         self.msg = f'The Format must be one of that : {vaild_formats_str}'
         super().__init__(self.msg)
+
+
+class AlreadyFollowing(AlgooError):
+    def __init__(self, *args: discord.TextChannel) -> None:
+        following_channel_mention = ', '.join(s.mention for s in args)
+        self.message = f'You already following {following_channel_mention}'
+        super().__init__(self.message)

@@ -1,27 +1,38 @@
 from __future__ import annotations
-from typing import Literal, NamedTuple, Optional, TypedDict, Union
-from pydantic import BaseModel, field_validator, Field
+from bson import ObjectId
+from dataclasses import dataclass, field
+from typing import List, Literal, NamedTuple, Optional, TypedDict, Union
+from pydantic import BaseModel, Field, field_validator
 
 import datetime
 import discord
 
 
-ReferenceTypes = Literal[
-    'Car Hunt Riot',
-    'Club Clash',
-    'Elite',
-    'Weekly Competition'
-]
+ReferenceTypes = Literal['Car Hunt Riot', 'Club Clash', 'Elite', 'Weekly Competition']
+SearchTypes = Literal['CAR', 'CLASS', 'MAP']
+FollowList = Literal["AL9oo Main Announcement", "AL9oo Urgent Alert", "ALU Release note"]
+
+CommandExecutableGuildChannel = Union[discord.abc.GuildChannel, discord.Thread]
+CommandExecutableAllChannel = Union[CommandExecutableGuildChannel, discord.DMChannel]
+WebhookMessagableChannel = Union[discord.ForumChannel, discord.TextChannel, discord.StageChannel, discord.VoiceChannel]
+
+Embeds = List[discord.Embed]
 
 
-SearchTypes = Literal[
-    'CAR',
-    'CLASS',
-    'MAP'
-]
+class FollowWebhookModel(TypedDict):
+    webhook : discord.Webhook
+    source_ch : discord.TextChannel
 
-ExecutableGuildChannel = Union[discord.abc.GuildChannel, discord.Thread]
-ExecutableAllChannel = Union[ExecutableGuildChannel, discord.DMChannel]
+
+class FollowFailedStatus(NamedTuple):
+    target : discord.TextChannel
+    reason : str
+
+
+class FollowResult(NamedTuple):
+    done : list[discord.TextChannel]
+    failed : list[FollowFailedStatus]
+    embed : discord.Embed
 
 
 class ModalResponse(NamedTuple):
@@ -45,10 +56,14 @@ class CommandUsageModel(NamedTuple):
 
 
 class FeedbackToMongo(BaseModel):
+    id : Optional[ObjectId] = Field(default=None, alias='_id')
     type : str
     detail : str
     author_info : FeedbackAllInfo
-    created_at : Optional[datetime.datetime] = Field(discord.utils.utcnow())
+    created_at : Optional[float] = Field(discord.utils.utcnow().timestamp())
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class FeedbackAllInfo(BaseModel):
@@ -96,10 +111,45 @@ class FeedbackChannel(BaseModel):
     id : int
     
     @classmethod
-    def from_channel(cls, channel : ExecutableAllChannel):
+    def from_channel(cls, channel : CommandExecutableAllChannel):
         if isinstance(channel, discord.DMChannel):
             return cls(name='DM', id=channel.id)
-        elif isinstance(channel, ExecutableGuildChannel):
+        elif isinstance(channel, CommandExecutableGuildChannel):
             return cls(name=channel.name, id=channel.id)
         else:
             raise ValueError(f'Input Class MUST be one of ExecutableGuildChannel or discord.DMChannel, not {channel.__class__.__name__}')
+
+
+class NumberedObject(BaseModel):
+    id : ObjectId = Field(alias='_id')
+    object : Union[discord.Embed, discord.File]
+    
+    @field_validator('object', mode='before')
+    @classmethod
+    def type_checker(cls, v : Union[discord.Embed, discord.File]):
+        if not isinstance(v, discord.Embed) and not isinstance(v, discord.File):
+            raise TypeError(f'Any Type not allowed except for discord.Embed or discord.File')
+        return v
+    
+    class Config:
+        arbitrary_types_allowed = True
+        
+
+class ErrorLogTrace(BaseModel):
+    id : Optional[ObjectId] = Field(None, alias='_id')
+    error_type : str
+    detected_at : Optional[float] = Field(discord.utils.utcnow().timestamp())
+    details : str
+
+    @field_validator('detected_at', mode='before')
+    @classmethod
+    def is_datetime(cls, v : Union[datetime.datetime, float]):
+        if isinstance(v, datetime.datetime):
+            return v.timestamp()
+        elif isinstance(v, float):
+            return v
+        else:
+            raise TypeError(f'Expected class is float or datetime.datetime, not {v.__class__.__name__}')
+    
+    class Config:
+        arbitrary_types_allowed = True
