@@ -31,7 +31,7 @@
 
 
 ## 📍 Features
-- AL9oo has 9+ features now (24.02.29)
+- AL9oo has 9+ features. (24.02.29)
 - Some of commands are Server-Only.
  
 ## Reference Search
@@ -102,15 +102,18 @@
   * Others     - Do you have anything else to say besides these two options?
 
 #### 4. /invite
-- Provides If you interested in AL9oo.
+- Provides invitation link If you interested in AL9oo.
 
 #### 5. /help
 - Provides all commands informations that you can use.
 
 #### 6. /redeem
-- Provides redeem link.
+- Provides ALU redeem link.
 
-#### 7. /support
+#### 7. /source
+- Provides AL9oo source from github.
+
+#### 8. /support
 - Provides AL9oo Support discord server link.
 
 
@@ -119,9 +122,10 @@
 - AL9oo must have "Manage Webhooks" for these features.
 - Server-Only commands.
 #### 1. /follow start
-- Start follow AL9oo Server Alerts.
-- You can choose between "Main Announcement" and "Urgent Alert" or both of them.
-  * Main Announcement : Receive Update for it.
-  * Urgent Alert : Receive Maintenance or something urgent issues related to it.
+- Starts following AL9oo Server Announcements.
+- You can choose "AL9oo Main Announcement", "AL9oo Urgent Alert" or all of them.
+  * AL9oo Main Announcement : Receive Update for it.
+  * AL9oo Urgent Alert : Receive Maintenance or something urgent issues related to it.
 
 #### 2. /follow stop 
+- Stops Following AL9oo Server Announcements or ALU Release Notes.
