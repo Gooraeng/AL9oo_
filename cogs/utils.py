@@ -2,11 +2,10 @@ from __future__ import annotations
 from discord import app_commands, Embed, Interaction, InteractionMessage, Permissions, ui
 from discord.ext import commands
 from discord.utils import format_dt, oauth_url
-from utils.commandpermission import permissioncheck
-from utils.common import InviteLinkView
+from typing import List, Optional, TYPE_CHECKING
+from component.view import InviteLinkView
 from utils.embed_color import al9oo_point, etc
 from utils.models import CommandUsageModel
-from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from al9oo import Al9oo
@@ -118,8 +117,8 @@ class TutorialView(ui.View):
         cmds : List[CommandUsageModel]
     ):
         super().__init__(timeout=None)
-        self.add_item(CommandsTutorialSelect(cmds))
         self.message : Optional[InteractionMessage] = None
+        self.add_item(CommandsTutorialSelect(cmds))
 
     async def on_timeout(self) -> None:
         self.clear_items()
@@ -251,7 +250,7 @@ class Utils(commands.Cog):
                 "I brings Announcement messages via webhook from AL9oo Support Server. I handle webhooks only that I made!" : "Manage Webhooks"
             }
         }
-        view = InviteLinkView(label='Click Me!', url=oauth_url(self.app.client_id, permissions=perm))
+        view = InviteLinkView(label='Click Me!', url=oauth_url(1218456364104290335, permissions=perm))
         embed = Embed(
             title='Permission Usage',
             description='',
@@ -267,9 +266,19 @@ class Utils(commands.Cog):
     @app_commands.checks.dynamic_cooldown(check_interaction, key=lambda i : i.user.id)
     async def support(self, interaction : Interaction):
         embed = Embed(
-            title="AL9oo Support Server", description="", color=al9oo_point, url='https://discord.gg/8dpAFYXk8s'
+            title="AL9oo Support Server", 
+            color=al9oo_point,
+            url='https://discord.gg/8dpAFYXk8s'
         )
-        await interaction.response.send_message(embed=embed)
+        view = InviteLinkView(url="AL9oo Support Server")
+        await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(description="Are you interested in my source?")
+    @app_commands.checks.dynamic_cooldown(check_interaction, key=lambda i : i.user.id)
+    async def source(self, interaction : Interaction):
+        url = "https://github.com/Gooraeng/AL9oo_"
+        view = InviteLinkView(label='MY SOURCE', url=url)
+        await interaction.response.send_message(url, view=view)
 
     @app_commands.command(name="who", description="am 'I'?")
     @app_commands.checks.dynamic_cooldown(check_interaction, key=lambda i: i.user.id)
@@ -320,21 +329,6 @@ class Utils(commands.Cog):
             colour=al9oo_point
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
-   
-    @help.error
-    @redeem.error
-    @support.error
-    @who.error
-    @ping.error
-    @invite.error
-    async def ssl_error(self, interaction : Interaction, error : app_commands.AppCommandError):
-        if isinstance(error, app_commands.BotMissingPermissions):
-            await permissioncheck(interaction, error=error)
-        if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(
-                f'You are on cooldown for **{int(error.retry_after)}** second(s) to run this command.',
-                ephemeral=True
-            )
 
 
 async def setup(app : Al9oo):
