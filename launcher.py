@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from utils.exception import LoadingFailedMongoDrive
 
 import asyncio
+import click
 import discord
 import contextlib
 import pathlib
@@ -23,22 +24,30 @@ async def create_pool():
                 return client
         except Exception:
             attempt += 1
-    
     raise LoadingFailedMongoDrive
 
 
-async def main():
+async def main(is_dev : bool = False):
     log = logging.getLogger(__name__)
     try:
+        click.echo('')
         pool = await create_pool()
-    
     except LoadingFailedMongoDrive:
         log.exception('Could not set up Mongo. Exiting.')
         return
     
-    async with Al9oo() as bot:
-        bot.pool = pool
+    bot = Al9oo(is_dev) 
+    bot.pool = pool
+
+    try:
         await bot.start()  
+    except KeyboardInterrupt:
+        log.info("KeyboardInterput Detected, shutting down.")
+    finally:
+        log.info("Closing Resources")
+        await bot.close()
+    
+    log.info('AL9oo shutdown complete.')
 
 
 class RemoveNoise(logging.Filter):
@@ -54,9 +63,10 @@ class RemoveNoise(logging.Filter):
 class CustomRotatingFileHandler(RotatingFileHandler):
     def __init__(self, filename: str | pathlib.PathLike[str], mode: str = "a", maxBytes: int = 0, backupCount: int = 0, encoding: str | None = None, delay: bool = False, errors: str | None = None) -> None:
         super().__init__(filename, mode, maxBytes, backupCount, encoding, delay, errors)
+        self.___log = logging.getLogger(__name__)
     
     def doRollover(self) -> None:
-        log.warning('로그 파일 경신')
+        self.___log.warning('로그 파일 경신')
         super().doRollover()  
         
 
@@ -89,10 +99,13 @@ def setup_logging():
             log.removeHandler(hdlr)
 
 
+@click.command()
+@click.option('-dev', default=False, help='')
+def algoo(dev):
+    click.echo('Configuring..')
+    with setup_logging():
+        asyncio.run(main(dev))
+        
+
 if __name__ == "__main__":
-    log = logging.getLogger(__name__)
-    try:
-        with setup_logging():
-            asyncio.run(main())
-    except KeyboardInterrupt:
-        log.warning('수동 종료')
+    algoo()
