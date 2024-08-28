@@ -5,13 +5,8 @@ from discord.ext import commands, tasks
 from discord.utils import utcnow
 from typing import List, Literal, Optional, TYPE_CHECKING
 from utils.check import match_helper
-from utils.commandpermission import permissioncheck
 from utils.embed_color import failed
-from utils.exception import (
-    NotFilledRequiredField,
-    SearchFailed,
-    SearchFailedBasic
-)
+from utils.exception import NotFilledRequiredField, SearchFailed, SearchFailedBasic
 from utils.paginator import T_Pagination
 
 if TYPE_CHECKING:
@@ -22,7 +17,6 @@ import numpy
 
 loop_when = time(hour=23, minute=59, second=45, tzinfo=timezone.utc)
 search_failed_embed = Embed(colour=failed)
-err_embed = Embed(description=f'Something went wrong! Please retry later.', colour=failed)
 
 
 class Reference(commands.Cog):
@@ -81,9 +75,6 @@ class Reference(commands.Cog):
         except SearchFailed as e:
             search_failed_embed.description = e.message
             await interaction.followup.send(embed=search_failed_embed)
-            
-        except Exception as e:
-            print(e)
 
     @carhunt.autocomplete('car')
     async def chs_autocpletion(
@@ -329,10 +320,11 @@ class Reference(commands.Cog):
     async def elite(
         self,
         interaction: Interaction,
-        class_type : Optional[Literal["S", "A", "B", "C"]] = None, 
+        class_type : Literal["S", "A", "B", "C"], 
         car_name : Optional[str] = None
     ):     
         await interaction.response.defer(thinking=True)
+        class_type = class_type.upper() 
         
         class_data = self.elite_class
         map_data = self.elite_map
@@ -340,15 +332,7 @@ class Reference(commands.Cog):
         lap_time_data = self.elite_laptime
         link_data = self.elite_link
         
-        try:
-            if class_type is None:
-                if self._current_elite_class is None:
-                    raise SearchFailedBasic('Elite')
-                else:
-                    class_type = self._current_elite_class.upper()
-            else:
-                class_type = class_type.upper()  
-                     
+        try:         
             if car_name is None:       
                 rest_list_1 = list(filter(lambda x: class_data[x]==class_type, range(len(class_data))))
                 
@@ -365,7 +349,7 @@ class Reference(commands.Cog):
                         inline=False
                     )
 
-                return await interaction.followup.send(embed=car_name_none_embed)
+                await interaction.followup.send(embed=car_name_none_embed)
                     
             else:
                 if car_name in car_data:
@@ -442,7 +426,7 @@ class Reference(commands.Cog):
     async def weekly(
         self,
         interaction: Interaction,
-        area : Optional[str] = None,
+        area : str,
         car_name : Optional[str] = None
     ):        
         await interaction.response.defer(thinking=True)
@@ -452,14 +436,8 @@ class Reference(commands.Cog):
         lap_time_data = self.weekly_laptime
         link_data = self.weekly_link
         
-        try:
-            if area is None :
-                if self._current_weekly_map is None:
-                    raise SearchFailedBasic('Weekly Competition')
-                else:
-                    area = self._current_weekly_map
-                    
-            elif area in list(set(map_data)):
+        try:                    
+            if area in list(set(map_data)):
                 if car_name is None:
                     rest_list_1 = list(filter(lambda x: map_data[x]==area, range(len(map_data))))
 
@@ -548,8 +526,7 @@ class Reference(commands.Cog):
         rest_list = list(set([car_data[i] for i in rest_list]))
         
         rest_list = [
-            app_commands.Choice(name=choice,value=choice)
-            for choice in rest_list
+            app_commands.Choice(name=choice,value=choice) for choice in rest_list
             if current.lower().strip() in choice.lower().strip()
         ]
         
@@ -557,43 +534,6 @@ class Reference(commands.Cog):
             rest_list = rest_list[:10]
         return rest_list 
 
-    @carhunt.error
-    @clash.error
-    @elite.error
-    @weekly.error
-    async def weeklycompete_error(self, interaction : Interaction, error : app_commands.AppCommandError):
-        if isinstance(error, app_commands.BotMissingPermissions):
-            await permissioncheck(interaction, error=error)  
-
-    @tasks.loop(time=loop_when)
-    async def ChangeMapEliteAndWeekly(self):
-        async def get_data(type : str, /) -> Optional[str]:
-            data = await self.app._rotation.find_one({'type' : type})
-            if data:
-                return data['current']
-            return 
-        
-        weekday = utcnow().weekday()
-        
-        # weekly
-        if weekday == 0 :
-            self._current_weekly_map = await get_data('weekly')
-        # elite
-        if weekday == 5 :
-            self._current_elite_class = await get_data('elite')
-    
-    @ChangeMapEliteAndWeekly.before_loop
-    async def MapStandardSetup(self):
-        await self.app.wait_until_ready()
-        self._current_elite_class : str = ...
-        self._current_weekly_map : str = ...
-        
-    # @app_commands.command(name='clean-up', description='...')
-    # @app_commands.guild_only()
-    # @app_commands.guilds(Object(id=1205958300873527466))
-    # @app_commands.default_permissions(administrator=True)
-    # async def cleanup(self, interaction : Interaction):
-    #     ...
         
 async def setup(app : Al9oo):
     await app.add_cog(Reference(app))
