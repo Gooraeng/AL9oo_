@@ -6,28 +6,23 @@ from discord import (
     Embed, 
     Interaction,
     TextChannel, 
-    ui
+    ui,
+    Webhook,
 )
 from typing import (
-    TYPE_CHECKING, 
-    Union, 
-    Literal,
+    List,
     Optional, 
-    List
+    TYPE_CHECKING, 
 )
 from discord.ext import commands
-from utils.commandpermission import permissioncheck
-from utils.embed_color import al9oo_point
+from utils.embed_color import al9oo_point, failed
+from utils.models import FollowList, FollowResult, FollowWebhookModel, FollowFailedStatus
 
 if TYPE_CHECKING:
     from al9oo import Al9oo
 
+import asyncio
 import discord
-
-
-al9oo_channels = [1160568027377578034, 1161584379571744830]
-arn_channel = [1188494656170901546]
-
 
 
 class AlertHelpView(ui.View):
@@ -65,199 +60,251 @@ class AlertHelpView(ui.View):
         return self._embeds[0]
 
 
-async def follow_al9oo(interaction : Interaction, *, target : TextChannel):
-    done = []
-    webhooks = await interaction.guild.webhooks()
-    
-    if not webhooks:
-        for a in al9oo_channels:
-            departure = interaction.client.get_channel(a) or await interaction.client.fetch_channel(a)
-            await departure.follow(destination=target)
-            done.append(departure.mention)
-
-    else:
-        webhook_ids = [
-            webhook.source_channel.id
-            for webhook in webhooks if webhook.source_channel is not None
-        ]
-        
-        for a in al9oo_channels:
-            if a not in webhook_ids:
-                departure = interaction.client.get_channel(a) or await interaction.client.fetch_channel(a)
-                await departure.follow(destination=target)
-                done.append(departure.mention)
-    return done
-
-
-async def follow_arn(interaction : Interaction, *, target : TextChannel):
-    channel = arn_channel[0]
-    done = []
-    webhooks = await interaction.guild.webhooks()
-
-    if not webhooks:
-        departure = interaction.client.get_channel(channel) or await interaction.client.fetch_channel(channel)
-        await departure.follow(destination=target)
-        done.append(departure.mention)
-
-    else:
-        webhook_ids = [
-            webhook.source_channel.id
-            for webhook in webhooks if webhook.source_channel is not None
-        ]
-        
-        if channel not in webhook_ids:
-            departure = interaction.client.get_channel(channel) or await interaction.client.fetch_channel(channel)
-            await departure.follow(destination=target)
-            done.append(departure.mention)
-            
-    return done
-
-
-async def follow_both(interaction : Interaction, target : TextChannel):
-    done_1 = await follow_al9oo(interaction, target=target)
-    done_2 = await follow_arn(interaction, target=target)
-    return done_1 + done_2
-
-
 @app_commands.default_permissions(administrator=True)
 @app_commands.guild_only()
 class Follow(commands.GroupCog):
     __cog_group_name__ = 'follow'
-
+    
     def __init__(self, app : Al9oo) -> None:
         self.app = app
     
+    async def cog_load(self) -> None:
+        self.followable : dict[FollowList, int] = {
+            "AL9oo Main Announcement" : self.app.al9oo_main_announcement.id,
+            "AL9oo Urgent Alert" : self.app.al9oo_urgent_alert.id,
+            "ALU Release note" : self.app.arn_channel.id
+        }
+        self.followable_id : dict[int, TextChannel] = {
+            self.app.al9oo_main_announcement.id : self.app.al9oo_main_announcement,
+            self.app.al9oo_urgent_alert.id : self.app.al9oo_urgent_alert,
+            self.app.arn_channel.id : self.app.arn_channel
+        }        
+        self.channels = list(self.followable_id.values())
+        self.channel_ids = list(self.followable_id.keys())
+
+    async def handle_following(self, following_webhooks : List[FollowWebhookModel], *, choose : Optional[FollowList] = None) :
+        # 여기까지 왔으면 follow 중이 아닌 채널의 수가 0, 1, 2인 상태
+        if choose:
+            selected_channel_id = self.followable[choose]
+        # 팔로우가 0일 때 신규 팔로우
+        if len(following_webhooks) == 0 or not following_webhooks:
+            if not choose:
+                return self.channels.copy()
+            return [channel for channel in self.channels if selected_channel_id == channel.id]
+        
+        # 추가 팔로우 시
+        wh_ids = [wh["source_ch"].id for wh in following_webhooks]
+        if not choose:
+            return [channel for channel in self.channels if channel.id not in wh_ids]
+        return [
+            channel for channel in self.channels
+            if selected_channel_id == channel.id and selected_channel_id not in wh_ids
+        ]
+        
+    async def handle_unfollowing(self, following_webhooks : List[FollowWebhookModel], *, choose : Optional[FollowList] = None) -> List[Webhook]:
+        # 여기까지 왔으면 follow 중인 채널의 수가 1, 2, 3인 상태
+        if not choose:
+            return [wh["webhook"] for wh in following_webhooks]
+        return [
+            wh["webhook"] for wh in following_webhooks for channel in self.channels
+            if channel.id == self.followable[choose] == wh["source_ch"].id
+        ]
+    
+    def get_following_channel_info(self, webhooks : List[FollowWebhookModel], embed : Embed):
+        for webhook in webhooks:
+            for k, v in self.followable.items():
+                src_id = webhook["source_ch"].id
+                if v == src_id:
+                    to = webhook["webhook"].channel
+                    start = self.followable_id[src_id]
+                    embed.add_field(name=k, value=f"From : {start.mention}\nTo : {to.mention}", inline=False)
+    
+    async def follow_configure(
+        self,
+        interaction : Interaction,
+        choose : Optional[FollowList] = None,
+        target : Optional[TextChannel] = None,
+        *,
+        unfollow : bool = False,
+    ):
+        if target and unfollow:
+            raise ValueError('"target" and "unfollow" must not be None at the same time.')
+        
+        embed = Embed(description='', color=al9oo_point)
+        embed.title = "Task Terminated" 
+        embed.set_footer(text='Remember. Following webhook could be quite slower than receving from that server.')
+        try:
+            guild_webhook = await interaction.guild.webhooks()
+        except discord.Forbidden:
+            embed.description = "I am not granted to check Webhooks. Please take a look permission I have and consider to run `/invite`, so you may understand why I require corresponding permission from it."
+            return embed
+        
+        following = [
+            FollowWebhookModel(webhook=wh, source_ch=self.followable_id[wh.source_channel.id])
+            for wh in guild_webhook
+            if wh.type.name == 'channel_follower' and wh.source_channel.id in self.channel_ids            
+        ]
+        
+        if unfollow and not following:      
+            embed.description = "You don't following any channel."
+            return embed
+        if len(following) == 3 and not unfollow:
+            self.get_following_channel_info(following, embed=embed)
+            embed.description = "You are following all channels."
+            return embed
+        
+        done : List[TextChannel] = []
+        failed : List[FollowFailedStatus] = []
+        
+        if unfollow:
+            existing_webhook = await self.handle_unfollowing(following, choose=choose)
+            
+            embed.title = "Deleting Follows..."
+            await interaction.edit_original_response(embed=embed)
+
+            for wh in existing_webhook:
+                unfollowed_channel = self.followable_id[wh.source_channel.id]
+                try:
+                    await wh.delete()
+                    done.append(unfollowed_channel)
+                except discord.HTTPException as e:
+                    failed.append(FollowFailedStatus(target=unfollowed_channel, reason=e.text))
+                else:
+                    embed.description = f'{len(done)} / {len(existing_webhook)}'
+                    await interaction.edit_original_response(embed=embed)
+                    await asyncio.sleep(3)
+                    
+        else:
+            # 여기서부터 팔로우와 관련된 걸 다루면 됨
+            temp = await self.handle_following(following, choose=choose)
+            
+            if not temp:
+                embed.description = "You are following that channel."
+                return embed
+        
+            embed.title = "Configuring Follows..."
+            await interaction.edit_original_response(embed=embed)
+            
+            for channel in temp:
+                try:
+                    await channel.follow(destination=target)
+                    done.append(channel)
+                except discord.ClientException as e:
+                    failed.append(FollowFailedStatus(target=channel, reason=e))
+                except discord.HTTPException as e:
+                    failed.append(FollowFailedStatus(target=channel, reason=e.text))
+                else:
+                    embed.description = f'{len(done)} / {len(temp)}'
+                    await interaction.edit_original_response(embed=embed)
+                    await asyncio.sleep(3)
+                    
+        return FollowResult(done=done, failed=failed, embed=embed)
+        
     @app_commands.command(name='help', description="Get small tip of alert commands!")
     async def help(self, interaction : Interaction):
+        await interaction.response.defer(thinking=True, ephemeral=True)
         try:
+            # Unfollow
             embed1 = Embed(
                 title=f"/{self.clear_channel.qualified_name}",
                 description=self.clear_channel.description,
-                color=al9oo_point)
+                color=al9oo_point
+            )
             embed1.add_field(name="Don't worry!", value="I don't delete any webhook that I didn't make")
             
+            # Follow
             embed2 = Embed(
                 title=f"/{self.set_channel.qualified_name}",
                 description=self.set_channel.description,
-                color=al9oo_point)
+                color=al9oo_point
+            )
 
             a9 = "Asphalt Legends Unite"
-            embed2.add_field(name="1. AL9oo", value="Get nofitications about my updates!")
+            embed2.add_field(name="1. AL9oo", value="Get nofitications about my updates! You will have 2 options : Main Annoucement, Urgent Alert.")
             embed2.add_field(name=f"2. {a9}", value=f"Get notifications from {a9} Release Notes faster than anyone else!")
             embeds = [embed1, embed2]
             
-            view = AlertHelpView(embeds=embeds)
-            return await interaction.response.send_message(view=view, embed=view.initial, ephemeral=True)
+            view = AlertHelpView(embeds)
+            await interaction.followup.send(view=view, embed=view.initial, ephemeral=True)
         
         except Exception as e:
-            await interaction.response.defer(thinking=True, ephemeral=True)
             await interaction.followup.send(content="Sorry, something error occured.", ephemeral=True)
             raise e
 
-    @app_commands.command(name='start', description="Create webhook(s) to get notifications in AL9oo announcements or Asphalt 9 Release Notes.")
-    @app_commands.describe(target="Choose Channel", select='What do you want follow?')
+    @app_commands.command(name='start', description="Create webhook(s) to get notifications in AL9oo announcements or ALU Release notes.")
+    @app_commands.describe(target="Choose Channel to receive alerts", select='What do you want to follow?')
     @app_commands.rename(target="channel")
-    @app_commands.checks.cooldown(3, 30, key=lambda i : (i.guild_id, i.user.id))
+    @app_commands.checks.cooldown(3, 120, key=lambda i : i.guild_id)
     @app_commands.checks.bot_has_permissions(manage_webhooks=True)
-    async def set_channel(self, interaction : Interaction, target : TextChannel, select : Optional[Literal["AL9oo", "Asphalt 9 Release note"]] = None):        
+    async def set_channel(
+        self,
+        interaction : Interaction,
+        target : TextChannel,
+        select : Optional[FollowList] = None
+    ):        
         await interaction.response.defer(thinking=True, ephemeral=True)
-        try:
-            match select:
-                case "AL9oo":
-                    done_1 = await follow_al9oo(interaction, target=target)
-                    done_2 = []
-                case "Asphalt 9 Release note":
-                    done_1 = []
-                    done_2 = await follow_arn(interaction, target=target)
-                case None:
-                    done = await follow_both(interaction, target=target)
-            try:
-                done = done_1 + done_2
-            except UnboundLocalError:
-                pass
-            
-            if not done:
-                return await interaction.followup.send(embed=Embed(
-                    title="Warn",
-                    description=f"You are already following all announcements.\nif you want to change setup, Run `/alert clear`, then run `/alert set`.",
-                    color=al9oo_point
-                ), ephemeral=True)
-              
-            if done:
-                followed = "\n* " + "\n* ".join(s for s in done)
-            else:
-                followed = ""
-    
-            return await interaction.followup.send(embed=Embed(
-                title="Warn",
-                description=f"You will receive notifications here from now.\n## {target.mention}\n### Following Channel" + followed,
-                color=al9oo_point
-            ), ephemeral=True)
+        
+        result = await self.follow_configure(interaction, target=target, choose=select)
+        if isinstance(result, Embed):
+            result.color = failed
+            return await interaction.followup.send(embed=result, ephemeral=True)
+        
+        if result.done:
+            _success = "\n * " + "\n * ".join(s.mention for s in result.done)
+        else:
+            _success = None
+        
+        if result.failed:
+            _failed = ''
+            for item in result.failed:
+                _failed += f'\n * {item.target.mention} - {item.reason}'
+        else:
+            _failed = None
+        
+        embed = result.embed
+        embed.title = "Result"
 
-        except discord.Forbidden:
-            return await interaction.followup.send(f"I am not in AL9oo server!", ephemeral=True)
-    
-        except Exception:
-            return await interaction.followup.send(
-                f"Failed run this command due to error.\nFirst, please check whether I can see {target.mention}",
-                ephemeral=True
+        if _success:
+            embed.add_field(
+                name='Success',
+                value=f"* Notification Channel : {target.mention}{_success}"
             )
-    
-    @app_commands.command(name='stop', description="Only remove webhooks that AL9oo created!")
-    @app_commands.describe(select="Select one, or not, I'll clear all webhooks that I made!")
-    @app_commands.checks.cooldown(3, 30, key=lambda i : (i.guild_id, i.user.id))
-    @app_commands.checks.bot_has_permissions(manage_webhooks=True)
-    async def clear_channel(self, interaction : Interaction, select : Optional[Literal["AL9oo", "Asphalt 9 Release note"]] = None):        
-        await interaction.response.defer(thinking=True, ephemeral=True)         
-        webhooks = await interaction.guild.webhooks()
-        
-        if not webhooks:
-            return await interaction.followup.send("It's clear already.", ephemeral=True)
-        
-        if select == "AL9oo":
-            channels = al9oo_channels
-        elif select == "Asphalt 9 Release note":
-            channels = arn_channel
-        else:
-            channels = al9oo_channels + arn_channel
-        
-        deleted = []; failed = []
-        for webhook in webhooks:
-            source = webhook.source_channel
-            if source is not None:
-                for i in channels:
-                    if source.id == i:
-                        target = await interaction.client.fetch_channel(i)
-                        try:
-                            await webhook.delete()
-                            deleted.append(target.mention)
-                        except Exception:
-                            failed.append(target.mention)
-                            
-        if not deleted:
-            return await interaction.followup.send("It's clear already.", ephemeral=True)
-        
-        elif not failed:
-            deleted = "\n* ".join(s for s in deleted)
-            return await interaction.followup.send(embed=Embed(
-                title="Warn", description=f"Deleted webhooks.", color=al9oo_point
-            ), ephemeral=True)
-        
-        else:
-            failed = "\n* ".join(s for s in failed)
-            return await interaction.followup.send(embed=Embed(
-                title="Warn",
-                description=f"Deleted webhooks Except for...\n* {failed}\nYou may delete manually for run this command again without any choice.",
-                color=al9oo_point
-            ), ephemeral=True)
+        if _failed:
+            embed.add_field(name='Failed', value=f'* Failed Channel(s) with Reason{_failed}')
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @clear_channel.error
-    @set_channel.error
-    async def alert_err(self, interaction : Interaction, error : Union[app_commands.AppCommandError, discord.DiscordException]):
-        if isinstance(error, app_commands.BotMissingPermissions):
-            await permissioncheck(interaction, error=error)
-        if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(f"Too much requests! Please wait for {int(error.retry_after)} second(s)!")
+    @app_commands.command(name='stop', description="Stop receiving AL9oo announcements or ALU Release note.")
+    @app_commands.describe(select="Select one, or I'll clear all webhooks that I made!")
+    @app_commands.checks.cooldown(3, 90, key=lambda i : i.guild_id)
+    @app_commands.checks.bot_has_permissions(manage_webhooks=True)
+    async def clear_channel(self, interaction : Interaction, select : Optional[FollowList] = None):        
+        await interaction.response.defer(thinking=True, ephemeral=True)         
+                
+        result = await self.follow_configure(interaction=interaction, choose=select, unfollow=True)
+        if isinstance(result, Embed):
+            result.colour = failed
+            return await interaction.followup.send(embed=result, ephemeral=True)
+        
+        if result.done:
+            _success = "\n * ".join(s.mention for s in result.done)
+        else:
+            _success = None
+        
+        if result.failed:
+            _failed = ''
+            for item in result.failed:
+                _failed += f'\n * {item.target.mention} - {item.reason}'
+        else:
+            _failed = None
+
+        embed = result.embed
+        embed.title = "Result"
+        
+        if _success:
+            embed.add_field(name='Success', value=f"* Unfollowed Channel\n * {_success}")
+        if _failed:
+            embed.add_field(name='Failed', value=f'* Failed Channel(s) with Reason{_failed}')
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(app : Al9oo):
