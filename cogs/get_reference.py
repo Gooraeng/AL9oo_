@@ -26,27 +26,27 @@ class Reference(commands.Cog):
         # 레퍼런스 변수
         
     def setup(self):
-        self.carhunt_carname = self.app.carhunt_CAR_NAME
-        self.carhunt_map = self.app.carhunt_AREA
-        self.carhunt_laptime = self.app.carhunt_LAP_TIME
-        self.carhunt_link = self.app.carhunt_LINK
+        self.carhunt_carname : List[str] = self.app.carhunt_CAR_NAME
+        self.carhunt_map : List[str] = self.app.carhunt_AREA
+        self.carhunt_laptime : List[str] = self.app.carhunt_LAP_TIME
+        self.carhunt_link : List[str] = self.app.carhunt_LINK
         
-        self.clash_class = self.app.clash_CLASS
-        self.clash_carname = self.app.clash_CAR_NAME
-        self.clash_map = self.app.clash_AREA
-        self.clash_laptime = self.app.clash_LAP_TIME
-        self.clash_link = self.app.clash_LINK
+        self.clash_class : List[str] = self.app.clash_CLASS
+        self.clash_carname : List[str] = self.app.clash_CAR_NAME
+        self.clash_map : List[str] = self.app.clash_AREA
+        self.clash_laptime : List[str] = self.app.clash_LAP_TIME
+        self.clash_link : List[str] = self.app.clash_LINK
         
-        self.elite_class = self.app.elite_CLASS
-        self.elite_carname = self.app.elite_CAR_NAME
-        self.elite_map = self.app.elite_AREA
-        self.elite_laptime = self.app.elite_LAP_TIME
-        self.elite_link = self.app.elite_LINK
+        self.elite_class : List[str] = self.app.elite_CLASS
+        self.elite_carname : List[str] = self.app.elite_CAR_NAME
+        self.elite_map : List[str] = self.app.elite_AREA
+        self.elite_laptime : List[str] = self.app.elite_LAP_TIME
+        self.elite_link : List[str] = self.app.elite_LINK
         
-        self.weekly_carname = self.app.weekly_CAR_NAME
-        self.weekly_map = self.app.weekly_AREA
-        self.weekly_laptime = self.app.weekly_LAP_TIME
-        self.weekly_link = self.app.weekly_LINK
+        self.weekly_carname : List[str] = self.app.weekly_CAR_NAME
+        self.weekly_map : List[str] = self.app.weekly_AREA
+        self.weekly_laptime : List[str] = self.app.weekly_LAP_TIME
+        self.weekly_link : List[str] = self.app.weekly_LINK
 
     @app_commands.command(
         description='You can watch Car hunt Riot videos!',
@@ -87,7 +87,7 @@ class Reference(commands.Cog):
         car_name = [
             app_commands.Choice(name=choice, value=choice)
             for choice in car_name 
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         
         if len(car_name) > 8:
@@ -123,25 +123,26 @@ class Reference(commands.Cog):
     ):
         await interaction.response.defer(thinking=True)
         
-        map_data = self.clash_map
-        class_data = self.clash_class
-        car_data = self.clash_carname
-        link_data = self.clash_link
-        lap_time_data = self.clash_laptime
+        map_data = self.clash_map.copy()
+        class_data = self.clash_class.copy()
+        car_data = self.clash_carname.copy()
+        link_data = self.clash_link.copy()
+        lap_time_data = self.clash_laptime.copy()
         same2 = None
         
         try:
             # ./utils/manage_tool.py 참고            
             if area in map_data :
-                area_list = list(filter(lambda x: map_data[x]==area, range(len(map_data))))               
-                car_data_filtered = [car_data[x] for x in area_list]
+                area_list = list(filter(lambda x: map_data[x]==area, range(0, len(map_data))))               
                 class_data_filtered = [class_data[x] for x in area_list]
-                lap_time_data_filtered = [lap_time_data[x] for x in area_list]
-                link_data_filtered = [link_data[x] for x in area_list]
                 true_class_data = list(set(class_data_filtered))
                 true_class_data.sort()
                 
-                if car_class is None :
+                if car_class is None :     
+                    car_data_filtered = [car_data[x] for x in area_list]          
+                    lap_time_data_filtered = [lap_time_data[x] for x in area_list]
+                    link_data_filtered = [link_data[x] for x in area_list]
+                    
                     if car_name is None:
                         embeds = []      
                         
@@ -166,8 +167,6 @@ class Reference(commands.Cog):
  
                             embeds.append(embed)
                         
-                        del class_data_filtered, car_data_filtered, link_data_filtered, lap_time_data_filtered, true_class_data, area_list
-                        
                         view = T_Pagination(embeds)
                         view._author = interaction.user
                         view.message = await interaction.edit_original_response(embed=view.initial, view=view)
@@ -183,10 +182,10 @@ class Reference(commands.Cog):
                             rest_list_1 = list(filter(lambda x: map_data[x]==area, range(len(map_data))))
                         
                             for i in rest_list_1:
-                                if class_data_filtered[i] == car_class:
+                                if class_data[i] == car_class:
                                     car_name_none_embed.add_field(
                                         name="",
-                                        value=f"[- `({lap_time_data_filtered[i]})` {car_data_filtered[i]}]({link_data_filtered[i]})\n\n",
+                                        value=f"[- `({lap_time_data[i]})` {car_data[i]}]({link_data[i]})\n\n",
                                         inline=False
                                     )
                             return await interaction.followup.send(embed=car_name_none_embed)
@@ -240,7 +239,7 @@ class Reference(commands.Cog):
         result1 = [
             app_commands.Choice(name=choice, value=choice)
             for choice in list(set(self.clash_map))
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
     
         if len(result1) > 10:
@@ -271,7 +270,7 @@ class Reference(commands.Cog):
         rest_list = [
             app_commands.Choice(name=choice,value=choice)
             for choice in rest_list
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         return rest_list
         
@@ -295,7 +294,7 @@ class Reference(commands.Cog):
         rest_list = [
             app_commands.Choice(name=choice, value=choice)
             for choice in rest_list
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         
         if len(rest_list) > 25:
@@ -401,7 +400,7 @@ class Reference(commands.Cog):
         rest_list = [
             app_commands.Choice(name=choice,value=choice)
             for choice in rest_list
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         
         if len(rest_list) > 10:
@@ -503,7 +502,7 @@ class Reference(commands.Cog):
         filetered = [
             app_commands.Choice(name=choice,value=choice)
             for choice in list(set(self.weekly_map)) 
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         
         if len(filetered) > 10:
@@ -527,7 +526,7 @@ class Reference(commands.Cog):
         
         rest_list = [
             app_commands.Choice(name=choice,value=choice) for choice in rest_list
-            if current.lower().strip() in choice.lower().strip()
+            if current.lower().replace(" ", "") in choice.lower().replace(" ", "")
         ]
         
         if len(rest_list) > 10:
